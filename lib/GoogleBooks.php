@@ -3,7 +3,7 @@
  * @author Drajat Hasan
  * @email drajathasan20@gmail.com
  * @create date 2022-08-28 18:05:21
- * @modify date 2022-08-28 18:41:16
+ * @modify date 2022-08-28 21:24:53
  * @license GPLv3
  * @desc [description]
  */
@@ -44,7 +44,12 @@ class GoogleBooks
      */
     private string $result = '';
 
-    public static function getInstance()
+    /**
+     * Get Google Books instance
+     *
+     * @return GoogleBooks
+     */
+    public static function getInstance(): GoogleBooks
     {
         if (is_null(self::$instance)) self::$instance = new GoogleBooks;
         return self::$instance;
@@ -66,26 +71,54 @@ class GoogleBooks
      * @param string $query
      * @return void
      */
-    public static function search(string $query)
+    public static function search(string $query): GoogleBooks
     {
         $client = self::getInstance()->getClient();
+        
         try {
             $request = $client->request('GET', self::getInstance()->endpoint . '?q=' . $query);
             self::getInstance()->result = $request->getBody()->getContents();
+            self::getInstance()->status = [
+                'status' => true,
+                'message' => 'ok'
+            ];
         } catch (ClientException $e) {
             self::getInstance()->status = [
-                'message' => $e->getMessage(),
-                'http_code' => $client->getStatusCode()
+                'status' => false,
+                'message' => $e->getMessage()
             ];
         }
 
         return self::getInstance();
     }
 
-    public function get()
+    /**
+     * Get result as collection
+     *
+     * @return Collection
+     */
+    public function get(): Collection
     {
-        $data = Json::parse(self::getInstance()->result)->toArray();
-        $collection = new Collection('mixed', $data['items']);
+        $data = Json::parse(self::getInstance()->result);
+        $collection = new Collection('mixed', $data->items);
         return $collection;
+    }
+
+    /**
+     * call property as function
+     *
+     * @param string $method
+     * @param array $params
+     */
+    public function __call($method, $params)
+    {
+        $propertyName = lcfirst(str_replace('get', '', $method));
+        $paramProcessor = function($property, $params) {
+            if (is_array($property) && count($params) > 0) return $property[$params[0]]??null;
+            if (is_object($property) && count($params) > 0 && property_exists($property, $params[0])) return $property->{$params[0]};
+            return $property;
+        };
+
+        if (property_exists($this, $propertyName)) return $paramProcessor($this->{$propertyName}, $params);
     }
 }

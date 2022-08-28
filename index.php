@@ -22,13 +22,7 @@ require SIMBIO . 'simbio_GUI/form_maker/simbio_form_table_AJAX.inc.php';
 require SIMBIO . 'simbio_GUI/paging/simbio_paging.inc.php';
 require SIMBIO . 'simbio_DB/datagrid/simbio_dbgrid.inc.php';
 require __DIR__ . '/vendor/autoload.php';
-// end dependency
 
-foreach (GoogleBooks::search('author:andrea')->get() as $books) {
-    echo '<pre>';
-    var_dump($books);
-    echo '</pre>';
-}
 
 // privileges checking
 $can_read = utility::havePrivilege('bibliography', 'r');
@@ -42,158 +36,111 @@ function httpQuery($query = [])
     return http_build_query(array_unique(array_merge($_GET, $query)));
 }
 
-$page_title = 'Layanan Google Books';
+function isbn($industryIdentifiers)
+{
+    if (isset($industryIdentifiers[1])) return $industryIdentifiers[1]['identifier'];
+    if (isset($industryIdentifiers[0])) return $industryIdentifiers[0]['identifier'];
+}
 
 /* Action Area */
-$max_print = 50;
-
-/* Action Area */
-if (isset($_GET['action']) && $_GET['action'] === 'clear')
-{
-    // clear session
-    if (isset($_SESSION['tarsius_print'])) $_SESSION['tarsius_print'] = [];
-
-    // unset ession
-    unset($_GET['action']);
-
-    // Set alert
-    utility::jsToastr('Sukses', 'atrian cetak berhasil dibersihkan', 'success');
-
-    echo <<<HTML
-    <script>
-        parent.document.querySelector('#queueCount').innerHTML = 0;
-    </script>
-    HTML;
-    exit;
-}
-
-if (isset($_POST['itemID']))
-{
-    $_SESSION['tarsius_print'] = $_POST['itemID'];
-    utility::jsToastr('Sukses', 'Kamu berhasil membuat session untuk cetak data', 'success');
-    $queueCount = count($_SESSION['tarsius_print']);
-    echo <<<HTML
-    <script>
-        parent.document.querySelector('#queueCount').innerHTML = {$queueCount};
-    </script>
-    HTML;
-    exit;
-}
-
-if (isset($_GET['action']) && $_GET['action'] === 'print')
-{
-    utility::jsToastr('Sukses', 'Kamu berhasil mencetak', 'success');
-    exit;
-}
 
 /* End Action Area */
+if (!isset($_GET['result'])) {
 ?>
 <div class="menuBox">
     <div class="menuBoxInner memberIcon">
         <div class="per_title">
-            <h2><?php echo $page_title; ?></h2>
+            <h2>Pencarian/Pengambilan Bibliografi via Google Books</h2>
         </div>
         <div class="sub_section">
-            <div class="btn-group">
-                <a target="blindSubmit" href="<?= $_SERVER['PHP_SELF'] . '?' . httpQuery(['action' => 'clear']) ?>" class="notAJAX btn btn-danger mx-1"><?= __('Clear Print Queue') ?></a>
-                <a target="blindSubmit" href="<?= $_SERVER['PHP_SELF'] . '?' . httpQuery(['action' => 'print']) ?>" class="notAJAX btn btn-primary mx-1"><?= __('Print Barcodes for Selected Data'); ?></a>
-                <a href="<?= $_SERVER['PHP_SELF'] . '?' . httpQuery(['action' => 'settings']) ?>" class="notAJAX btn btn-default openPopUp mx-1" width="780" height="500" title="<?= __('Change print barcode settings'); ?>"><?= __('Change print barcode settings'); ?></a>
-            </div>
-            <form name="search" action="<?= $_SERVER['PHP_SELF'] . '?' . httpQuery() ?>" id="search" method="get" class="form-inline"><?php echo __('Search'); ?>
-                <input type="text" name="keywords" class="form-control col-md-3"/>
-                <input type="submit" id="doSearch" value="<?php echo __('Search'); ?>"
-                        class="s-btn btn btn-default"/>
+            <form name="search" id="search" target="booksIframe" action="<?= $_SERVER['PHP_SELF'] . '?' . httpQuery() ?>" loadcontainer="searchResult" method="get" class="form-inline"><?php echo __('Search'); ?>
+                <input type="hidden" name="mod" value="<?= str_replace(['\'', '"'], '', strip_tags($_GET['mod'])) ?>"/>
+                <input type="hidden" name="id" value="<?= str_replace(['\'', '"'], '', strip_tags($_GET['id'])) ?>"/>
+                <input type="hidden" name="result" value="ok"/>
+                <input type="text" name="keywords" id="keywords" class="form-control col-md-3" />
+                <select name="index" class="form-control ">
+                    <option value=""><?php echo __('All fields'); ?></option>
+                    <option value="isbn:"><?php echo __('ISBN/ISSN'); ?></option>
+                    <option value="title:"><?php echo __('Title/Series Title'); ?></option>
+                    <option value="author:"><?php echo __('Authors'); ?></option>
+                </select>
+                <input type="submit" id="doSearch" value="<?php echo __('Search'); ?>" class="s-btn btn btn-default" />
             </form>
         </div>
         <div class="infoBox">
-        <?php
-        echo __('Maximum').' <strong class="text-danger">'.$max_print.'</strong> '.__('records can be printed at once. Currently there is').' ';
-        if (isset($_SESSION['tarsius_print'])) {
-            echo '<strong id="queueCount" class="text-danger">'.count($_SESSION['tarsius_print']).'</strong>';
-        } else { echo '<strong id="queueCount" class="text-danger">0</strong>'; }
-        echo ' '.__('in queue waiting to be printed.');
-        ?>
+        * Pastikan Anda memiliki koneksi internet.
         </div>
     </div>
 </div>
-
+<iframe name="booksIframe" src="<?= $_SERVER['PHP_SELF'] . '?' . httpQuery(['result' => 'yes']) ?>" class="w-100 h-auto" style="height: 100vh !important"></iframe>
 <?php
-/* Datagrid area */
-/**
- * table spec
- * ---------------------------------------
- * Tuliskan nama tabel pada variabel $table_spec. Apabila anda 
- * ingin melakukan pegabungan banyak tabel, maka anda cukup menulis kan
- * nya saja layak nya membuat query seperti biasa
- *
- * Contoh :
- * - dummy_plugin as dp left join non_dummy_plugin as ndp on dp.id = ndp.id ... dst
- *
- */
-$table_spec = 'dummy_plugin';
+} else {
+    if (isset($_GET['keywords']))
+    {
+        // Start cache data
+        $_SESSION['googleBooks'] = [];
+        
+        // Took from marcsru.php
+        ob_start();
+        $table = new simbio_table();
+        $table->table_attr = 'align="center" class="s-table table" cellpadding="5" cellspacing="0"';
+        echo  '<div class="p-3">
+                <input value="'.__('Check All').'" class="check-all button btn btn-default" type="button"> 
+                <input value="'.__('Uncheck All').'" class="uncheck-all button btn btn-default" type="button">
+                <input type="submit" name="saveZ" class="s-btn btn btn-success save" value="' . __('Save Marc Records to Database') . '" /></div>';
 
-// membuat datagrid
-$datagrid = new simbio_datagrid();
+        // table header
+        $table->setHeader(array(__('Select'),__('Title'),__('ISBN/ISSN'),__('E-Book Preview')));
+        $table->table_header_attr = 'class="dataListHeader alterCell font-weight-bold"';
+        $table->setCellAttr(0, 0, '');
 
-/** 
- * Menyiapkan kolom
- * -----------------------------------------
- * Format penulisan sama seperti anda menuliskan di query pada phpmyadmin/adminer/yang lain,
- * hanya di SLiMS anda diberikan beberapa opsi seperti, penulisan dengan gaya multi parameter,
- * dan gaya single parameter.
- *
- * Contoh :
- * - Single Parameter : $datagrid->setSQLColumn('id', 'kolom1, kolom2, kolom3'); // penulisan langsung
- * - Single Parameter : $datagrid->setSQLColumn('id', 'kolom1', 'kolom2', 'kolom3'); // penulisan secara terpisah
- *
- * Catatan :
- * - Jangan lupa menyertakan kolom yang bersifat PK (Primary Key) / FK (Foreign Key) pada urutan pertama,
- *   karena kolom tersebut digunakan untuk pengait pada proses lain.
- */
- $datagrid->setSQLColumn('id, kolom1, kolom2, kolom3');
+        // Table content
+        $search = GoogleBooks::search(trim($_GET['index'] . $_GET['keywords']))->get();
+        
+        if ($search->count() > 0)
+        {
+            foreach ($search as $index => $books) 
+            {
+                $_SESSION['googleBooks'][$books['id']] = $books;
 
-/** 
- * Pencarian data
- * ------------------------------------------
- * Bagian ini tidak lepas dari nama kolom dari tabel yang digunakan.
- * Jadi, untuk pencarian yang lebih banyak anda dapat menambahkan kolom pada variabel
- * $criteria
- *
- * Contoh :
- * - $criteria = ' kolom1 = "'.$keywords.'" OR kolom2 = "'.$keywords.'" OR kolom3 = "'.$keywords.'"';
- * - atau anda bisa menggunakan query anda.
- */
- if (isset($_GET['keywords']) AND $_GET['keywords']) 
- {
-     $keywords = utility::filterData('keywords', 'get', true, true, true);
-     $criteria = ' kolom1 = "'.$keywords.'"';
-     // jika ada keywords maka akan disiapkan criteria nya
-     $datagrid->setSQLCriteria($criteria);
- }
+                // Extract all data in volumne info
+                extract($books['volumeInfo']);
 
-/** 
- * Atribut tambahan
- * --------------------------------------------
- * Pada bagian ini anda dapat menentukan atribut yang akan muncul pada datagrid
- * seperti judul tombol, dll
- */
-// set table and table header attributes
-$datagrid->table_attr = 'id="dataList" class="s-table table"';
-$datagrid->table_header_attr = 'class="dataListHeader" style="font-weight: bold;"';
-// edit and checkbox property
-$datagrid->edit_property = false;
-$datagrid->chbox_property = array('itemID', __('Add'));
-$datagrid->chbox_action_button = __('Add To Print Queue');
-$datagrid->chbox_confirm_msg = __('Add to print queue?');
-$datagrid->column_width = array('10%', '85%');
-// set checkbox action URL
-$datagrid->chbox_form_URL = $_SERVER['PHP_SELF'] . '?' . httpQuery();
-// put the result into variables
-$datagrid_result = $datagrid->createDataGrid($dbs, $table_spec, 20, true); // object database, spesifikasi table, jumlah data yang muncul, boolean penentuan apakah data tersebut dapat di edit atau tidak.
-if (isset($_GET['keywords']) AND $_GET['keywords']) {
-    $msg = str_replace('{result->num_rows}', $datagrid->num_rows, __('Found <strong>{result->num_rows}</strong> from your keywords'));
-    echo '<div class="infoBox">' . $msg . ' : "' . htmlspecialchars($_GET['keywords']) . '"<div>' . __('Query took') . ' <b>' . $datagrid->query_time . '</b> ' . __('second(s) to complete') . '</div></div>';
+                // set book cover based on result
+                $title_content = '<div class="media">
+                            <img class="mr-3 rounded" src="'.$imageLinks['thumbnail'].'" alt="cover image" style="height:70px;">
+                            <div class="media-body">
+                            <div class="title">'.stripslashes($title).'</div><div class="authors">'.implode(', ', $authors??[]).'</div>
+                            </div>
+                        </div>';
+            
+                // Ebook preview
+                $ebookLink = '<a href="' . $books['accessInfo']['webReaderLink'] . '" class="notAJAX openNewTab">Lihat</a>';
+
+                $table->appendTableRow(array('',$title_content, isbn($industryIdentifiers??[]), $ebookLink));
+                // set cell attribute
+                $row_class = ($index%2 == 0)?'alterCell':'alterCell2';
+                $table->setCellAttr($index, 0, 'class="'.$row_class.'" valign="top" style="width: 5px;"');
+                $table->setCellAttr($index, 1, 'class="'.$row_class.'" valign="top" style="width: auto;"');
+                $table->setCellAttr($index, 2, 'class="'.$row_class.'" valign="top" style="width: auto;"');
+                $table->setCellAttr($index, 2, 'class="'.$row_class.'" valign="top" style="width: auto;"');
+            }
+        }
+        // end table content
+
+        echo $table->printTable();  
+        $content = ob_get_clean();
+        $js = <<<HTML
+        <script>
+            $(document).ready(function(){
+                $('.openNewTab').click(function(e){
+                    e.preventDefault();
+                    parent.window.open($(this).attr('href'), '_blank');
+                });
+            });
+        </script>
+        HTML;
+        include SB . 'admin/admin_template/notemplate_page_tpl.php';
+        exit;
+    }
 }
-// menampilkan datagrid
-echo $datagrid_result;
-/* End datagrid */
