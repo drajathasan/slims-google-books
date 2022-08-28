@@ -1,0 +1,21 @@
+{
+    "name": "drajat/layanan_google_books",
+    "description": "Ambil data buku dari Google Books",
+    "type": "library",
+    "require": {
+        "guzzlehttp/guzzle": "^7.4",
+        "ramsey/collection": "^1.2"
+    },
+    "license": "GPL-3.0",
+    "authors": [
+        {
+            "name": "Drajat Hasan",
+            "email": "drajathasan20@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "SLiMS\\Integration\\": "lib/"
+        }
+    }
+}
