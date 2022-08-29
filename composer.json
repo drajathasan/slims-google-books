@@ -4,7 +4,8 @@
     "type": "library",
     "require": {
         "guzzlehttp/guzzle": "^7.4",
-        "ramsey/collection": "^1.2"
+        "ramsey/collection": "^1.2",
+        "zein/database": "^1.1"
     },
     "license": "GPL-3.0",
     "authors": [
@@ -15,7 +16,8 @@
     ],
     "autoload": {
         "psr-4": {
-            "SLiMS\\Integration\\": "lib/"
+            "SLiMS\\Integration\\": "lib/",
+            "SLiMS\\Models\\": "models/"
         }
     }
 }

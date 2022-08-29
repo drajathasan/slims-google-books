@@ -8,6 +8,7 @@
 defined('INDEX_AUTH') OR die('Direct access not allowed!');
 
 use SLiMS\Integration\GoogleBooks;
+use SLiMS\Models\Biblio;
 
 // IP based access limitation
 require LIB . 'ip_based_access.inc.php';
@@ -22,7 +23,6 @@ require SIMBIO . 'simbio_GUI/form_maker/simbio_form_table_AJAX.inc.php';
 require SIMBIO . 'simbio_GUI/paging/simbio_paging.inc.php';
 require SIMBIO . 'simbio_DB/datagrid/simbio_dbgrid.inc.php';
 require __DIR__ . '/vendor/autoload.php';
-
 
 // privileges checking
 $can_read = utility::havePrivilege('bibliography', 'r');
@@ -40,6 +40,25 @@ function isbn($industryIdentifiers)
 {
     if (isset($industryIdentifiers[1])) return $industryIdentifiers[1]['identifier'];
     if (isset($industryIdentifiers[0])) return $industryIdentifiers[0]['identifier'];
+}
+
+if (isset($_POST['idCheckBox']))
+{
+    foreach ($_POST['idCheckBox'] as $bookId) {
+        if (isset($_SESSION['googleBooks'][$bookId]) && isset($_SESSION['googleBooks'][$bookId]['volumeInfo']))
+        {
+            // Volume data
+            extract($_SESSION['googleBooks'][$bookId]['volumeInfo']);
+
+            // Biblio instance
+            $Biblio = Biblio::create([
+                'title' => $title,
+                'notes' => $description,
+                'isbn_issn' => isbn($industryIdentifiers),
+                'publish_year' => $publishedDate
+            ]);
+        }
+    }
 }
 
 /* Action Area */
@@ -84,7 +103,7 @@ if (!isset($_GET['result'])) {
         ob_start();
         $table = new simbio_table();
         $table->table_attr = 'align="center" class="s-table table" cellpadding="5" cellspacing="0"';
-        echo  '<div class="p-3">
+        echo  '<form method="POST" action="' . $_SERVER['PHP_SELF'] . '?' . httpQuery() . '"><div class="p-3">
                 <input value="'.__('Check All').'" class="check-all button btn btn-default" type="button"> 
                 <input value="'.__('Uncheck All').'" class="uncheck-all button btn btn-default" type="button">
                 <input type="submit" name="saveZ" class="s-btn btn btn-success save" value="' . __('Save Marc Records to Database') . '" /></div>';
@@ -117,7 +136,10 @@ if (!isset($_GET['result'])) {
                 // Ebook preview
                 $ebookLink = '<a href="' . $books['accessInfo']['webReaderLink'] . '" class="notAJAX openNewTab">Lihat</a>';
 
-                $table->appendTableRow(array('',$title_content, isbn($industryIdentifiers??[]), $ebookLink));
+                // Checkbox
+                $checkBox = '<input type="checkbox" name="idCheckBox[]" value="' . $books['id'] . '"/>';
+
+                $table->appendTableRow(array($checkBox,$title_content, isbn($industryIdentifiers??[]), $ebookLink));
                 // set cell attribute
                 $row_class = ($index%2 == 0)?'alterCell':'alterCell2';
                 $table->setCellAttr($index, 0, 'class="'.$row_class.'" valign="top" style="width: 5px;"');
@@ -128,7 +150,7 @@ if (!isset($_GET['result'])) {
         }
         // end table content
 
-        echo $table->printTable();  
+        echo $table->printTable() . '</form>';  
         $content = ob_get_clean();
         $js = <<<HTML
         <script>
@@ -136,6 +158,18 @@ if (!isset($_GET['result'])) {
                 $('.openNewTab').click(function(e){
                     e.preventDefault();
                     parent.window.open($(this).attr('href'), '_blank');
+                });
+
+                $('.check-all').click(function(){
+                    $('input[name="idCheckBox[]"]').each((index,el) => {
+                      el.checked = true  
+                    })
+                });
+
+                $('.uncheck-all').click(function(){
+                    $('input[name="idCheckBox[]"]').each((index,el) => {
+                      el.checked = false  
+                    })
                 });
             });
         </script>
